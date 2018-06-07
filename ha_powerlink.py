@@ -53,7 +53,7 @@ defaults = {
     "ha_alarm_state_topic": "home/alarm",         # HA alarm state topic
     "ha_alarm_command_topic": "home/alarm/set",   # HA alarm command topic
     "ha_sensor_state_topic": "home/alarm/sensor", # HA sensor state topic
-    "ignore_first_cmd": "True",     # Ignore the first command when connecting to MQTT 
+    "ignore_first_cmd": "True",     # Ignore the first command when connecting to MQTT
                                     #   false means that the current HA status will take effect
     "mqtt_port": "1883",            # MQTT port
     "mqtt_host": "127.0.0.1",       # MQTT address
@@ -160,7 +160,7 @@ def do_getstatus():
         traceprint(alarm_status_response)
         curr_status = root.find('*/system/status').text
         debugprint("Status from alarm: " + curr_status)
-        if curr_status == "Ready":
+        if curr_status == "Ready" or curr_status == "Not Ready":
             new_status = 'disarmed'
         elif curr_status == "Exit Delay":
             new_status = 'pending'
@@ -183,11 +183,11 @@ def do_getstatus():
             client.publish(ha_alarm_state_topic, alarm_status, qos=0, retain=True)
             infoprint("Alarm status: " + alarm_status)
             status_last_sent = time.time()
-    traceprint("Index: " + curr_index) 
+    traceprint("Index: " + curr_index)
 
 def do_sensorcheck():
     # Get the current alarm sensor status and send to HA
-    global alarm_triggered
+    global alarm_triggered, alarm_status_response
     root = ET.fromstring(alarm_status_response)
     sensors = root.findall("./detectors//detector")
 
@@ -204,10 +204,11 @@ def do_sensorcheck():
             elif gchild.tag == 'isalarm':
                 isalarm = str(gchild.text)
         if status == "None":
-            status = STATE_OK 
-        else:   
+            status = STATE_OK
+        else:
             debugprint("Sensor " + zone + " = " + status + ", alarm = " + isalarm)
-
+            # if status != STATE_OPEN:
+            debugprint("DUMP:" + alarm_status_response)
         if (isalarm == "yes" or status == STATE_ALARM):
             alarm_triggered = True
             # Workaround for boolean sensor
