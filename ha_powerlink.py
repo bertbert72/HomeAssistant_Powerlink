@@ -12,8 +12,8 @@ from logging.handlers import RotatingFileHandler
 
 configfile_name = 'ha_powerlink.ini'
 logfile_name = 'ha_powerlink.log'
-use_logfile = True
-debug_level = 2   # 0 = error, 1 = info, 2 = debug, 3 = trace
+use_logfile = False
+debug_level = 1   # 0 = error, 1 = info, 2 = debug, 3 = trace
 
 if use_logfile == True:
     log_handler = RotatingFileHandler(logfile_name, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=False)
