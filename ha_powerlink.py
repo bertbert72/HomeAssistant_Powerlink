@@ -105,6 +105,7 @@ framepage = url+'/web/frameSetup_ViewLog.php'
 STATE_OK = "Ok"
 STATE_OPEN = "Open"
 STATE_ALARM = "Alarm"
+STATE_LOWBAT = "Low Battery"
 
 alarm_status_response = ''
 alarm_status = 'unknown'
@@ -205,6 +206,8 @@ def do_sensorcheck():
                 isalarm = str(gchild.text)
         if status == "None":
             status = STATE_OK
+        elif status == STATE_LOWBAT:
+            status = STATE_OPEN
         else:
             debugprint("Sensor " + zone + " = " + status + ", alarm = " + isalarm)
             # if status != STATE_OPEN:
