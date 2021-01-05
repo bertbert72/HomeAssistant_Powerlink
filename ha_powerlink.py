@@ -12,10 +12,10 @@ from logging.handlers import RotatingFileHandler
 
 configfile_name = 'ha_powerlink.ini'
 logfile_name = 'ha_powerlink.log'
-use_logfile = False
-debug_level = 1   # 0 = error, 1 = info, 2 = debug, 3 = trace
+use_logfile = True
+debug_level = 2   # 0 = error, 1 = info, 2 = debug, 3 = trace
 
-if use_logfile == True:
+if use_logfile:
     log_handler = RotatingFileHandler(logfile_name, mode='a', maxBytes=5*1024*1024, backupCount=2, encoding=None, delay=False)
 else:
     log_handler = logging.StreamHandler()
@@ -26,21 +26,26 @@ logger = logging.getLogger('root')
 logger.setLevel(logging.DEBUG)
 logger.addHandler(log_handler)
 
+
 def errorprint(string):
     global debug_level
     if debug_level >= 0: logger.error(string)
+
 
 def infoprint(string):
     global debug_level
     if debug_level >= 1: logger.info(string)
 
+
 def debugprint(string):
     global debug_level
     if debug_level >= 2: logger.debug(string)
 
+
 def traceprint(string):
     global debug_level
     if debug_level >= 3: logger.trace(string)
+
 
 # Read config file
 # Don't change the defaults - use the .ini file to override
@@ -53,6 +58,7 @@ defaults = {
     "ha_alarm_state_topic": "home/alarm",         # HA alarm state topic
     "ha_alarm_command_topic": "home/alarm/set",   # HA alarm command topic
     "ha_sensor_state_topic": "home/alarm/sensor", # HA sensor state topic
+    "ha_sensor_battery_topic": "home/alarm/sensorbattery", # HA sensor state topic
     "ignore_first_cmd": "True",     # Ignore the first command when connecting to MQTT
                                     #   false means that the current HA status will take effect
     "mqtt_port": "1883",            # MQTT port
@@ -75,6 +81,7 @@ if os.path.isfile(configfile_name):
     ha_alarm_state_topic = config.get('Settings', 'ha_alarm_state_topic')
     ha_alarm_command_topic = config.get('Settings', 'ha_alarm_command_topic')
     ha_sensor_state_topic = config.get('Settings', 'ha_sensor_state_topic')
+    ha_sensor_battery_topic = config.get('Settings', 'ha_sensor_battery_topic')
     ignore_first_cmd = config.getboolean('Settings', 'ignore_first_cmd')
     mqtt_host = config.get('Settings', 'mqtt_host')
     mqtt_port = config.getint('Settings', 'mqtt_port')
@@ -105,13 +112,18 @@ framepage = url+'/web/frameSetup_ViewLog.php'
 STATE_OK = "Ok"
 STATE_OPEN = "Open"
 STATE_ALARM = "Alarm"
-STATE_LOWBAT = "Low Battery"
+STATE_LOW_BATTERY = "Low Battery"
+
+BATTERY_UNDETERMINED = "Unknown"
+BATTERY_OK = "Ok"
+BATTERY_LOW = "Low"
 
 alarm_status_response = ''
 alarm_status = 'unknown'
 alarm_triggered = False
 curr_index = 0
 status_last_sent = time.time()
+
 
 def getheaders():
     global plink_token
@@ -121,6 +133,7 @@ def getheaders():
         "Cookie": "PowerLink="+plink_token
     }
     return headers
+
 
 def do_logincheck():
     # Attempt to login using current session token
@@ -142,6 +155,7 @@ def do_logincheck():
     else:
         debugprint("Using existing Powerlink connection")
     return True
+
 
 def do_getstatus():
     # Get the current alarm status and notify HA if it changed
@@ -186,6 +200,7 @@ def do_getstatus():
             status_last_sent = time.time()
     traceprint("Index: " + curr_index)
 
+
 def do_sensorcheck():
     # Get the current alarm sensor status and send to HA
     global alarm_triggered, alarm_status_response
@@ -197,6 +212,7 @@ def do_sensorcheck():
         zone = "0"
         status = "None"
         isalarm = "None"
+        battery = BATTERY_UNDETERMINED
         for gchild in child:
             if gchild.tag == 'zone':
                 zone = str(gchild.text)
@@ -206,17 +222,23 @@ def do_sensorcheck():
                 isalarm = str(gchild.text)
         if status == "None":
             status = STATE_OK
-        elif status == STATE_LOWBAT:
-            status = STATE_OPEN
+            battery = BATTERY_OK
         else:
             debugprint("Sensor " + zone + " = " + status + ", alarm = " + isalarm)
             # if status != STATE_OPEN:
             debugprint("DUMP:" + alarm_status_response)
-        if (isalarm == "yes" or status == STATE_ALARM):
+        if status == STATE_LOW_BATTERY:
+            battery = BATTERY_LOW
+        if isalarm == "yes" or status == STATE_ALARM:
             alarm_triggered = True
             # Workaround for boolean sensor
-            status == STATE_OPEN
-        client.publish(ha_sensor_state_topic+zone, status, qos=0, retain=True)
+            status = STATE_OPEN
+        if battery != BATTERY_UNDETERMINED:
+            client.publish(ha_sensor_battery_topic+zone, battery, qos=0, retain=True)
+            debugprint("Setting battery to " + str(battery) + " for sensor " + str(zone))
+        if battery != BATTERY_LOW:
+            client.publish(ha_sensor_state_topic + zone, status, qos=0, retain=True)
+
 
 def do_setstatus(target_status):
     # Set the alarm status
@@ -224,17 +246,20 @@ def do_setstatus(target_status):
     payload = {"set": target_status}
     r = requests.post(cmd_arming, data=payload, headers=getheaders())
 
+
 def do_logout():
     # Logout from the Powerlink server
     global cmd_logout
     payload = {}
     r = requests.post(cmd_logout, data=payload, headers=getheaders())
 
+
 def on_connect(client, userdata, flags, rc):
     global alarm_status, just_connected
     debugprint("Connected with result code "+str(rc))
     client.subscribe(ha_alarm_command_topic)
     just_connected = True
+
 
 def on_message(client, userdata, msg):
     global just_connected, ignore_first_cmd
@@ -244,6 +269,7 @@ def on_message(client, userdata, msg):
     else:
         infoprint("Ignoring command: " + msg.payload)
         just_connected = False
+
 
 # Connect to Powerlink
 if do_logincheck() == True:
